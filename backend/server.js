@@ -35,7 +35,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const text = result.value;
 
         // Split by Q1. Q2. Q3.
-        const blocks = text.split(/Q\d+\./).filter(b => b.trim());
+        const blocks = text.split(/\n?\s*Q\s*\d+[\.\)\:\-]?\s*/i).filter(b => b.trim());
 
         const children = [];
 
