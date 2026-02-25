@@ -23,18 +23,15 @@ const upload = multer({ dest: "uploads/" });
 
 /* ------------------------- UTILITIES ------------------------- */
 
-// Convert option letter → number
 function letterToNumber(letter) {
     const map = { a: "1", b: "2", c: "3", d: "4" };
     return map[letter?.toLowerCase()] || "";
 }
 
-// Remove emojis
 function removeEmojis(text) {
     return text.replace(/[\p{Extended_Pictographic}]/gu, "");
 }
 
-// Clean extra spacing
 function cleanText(text) {
     return text.replace(/\s+/g, " ").trim();
 }
@@ -48,7 +45,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const result = await mammoth.extractRawText({ path: filePath });
         const text = result.value;
 
-        // Robust split: handles Q1., Q1:, Q1), Q 1 etc.
         const blocks = text
             .split(/\n?\s*(?=Q\s*\d+)/i)
             .filter(b => b.trim());
@@ -75,32 +71,33 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             questionText = cleanText(questionText);
 
-            /* --------- OPTION EXTRACTION --------- */
+            /* --------- OPTION EXTRACTION (FIXED) --------- */
 
             const options = [];
 
-            // Find all option markers like (a), (b), (c), (d)
-            const optionMatches = [...block.matchAll(/\([a-d]\)/gi)];
+            const optionRegex = /\(([a-d])\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct\s*Answer|Explanation|$)/gi;
 
-            for (let i = 0; i < optionMatches.length; i++) {
-                const start = optionMatches[i].index;
-                const end = (i + 1 < optionMatches.length)
-                    ? optionMatches[i + 1].index
-                    : block.search(/(Answer|Correct Answer|Explanation)/i) > -1
-                        ? block.search(/(Answer|Correct Answer|Explanation)/i)
-                        : block.length;
+            let match;
 
-                const optionText = block
-                    .substring(start)
-                    .replace(/\([a-d]\)/i, "")
-                    .trim();
+            while ((match = optionRegex.exec(block)) !== null) {
+                let optionText = match[2];
 
-                options.push(optionText.substring(0, end - start).trim());
+                optionText = removeEmojis(optionText);
+                optionText = cleanText(optionText);
+
+                options.push(optionText);
+            }
+
+            // Strict 4 options safeguard
+            if (options.length > 4) {
+                options.splice(4);
             }
 
             /* --------- ANSWER EXTRACTION --------- */
 
-            const answerMatch = block.match(/(Correct\s*)?Answer\s*[:\-]?\s*\(?([a-d])\)?/i);
+            const answerMatch = block.match(
+                /(Correct\s*)?Answer\s*[:\-]?\s*\(?([a-d])\)?/i
+            );
 
             const answerLetter = answerMatch ? answerMatch[2] : "";
             const answerNumber = letterToNumber(answerLetter);
@@ -109,11 +106,11 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             let explanationText = "";
 
-            const explanationMatch = block.split(/Explanation/i);
+            const explanationRegex = /Explanation\s*[:\-]?\s*([\s\S]*)/i;
+            const explanationMatch = block.match(explanationRegex);
 
-            if (explanationMatch.length > 1) {
-                explanationText = explanationMatch[1];
-                explanationText = removeEmojis(explanationText);
+            if (explanationMatch) {
+                explanationText = removeEmojis(explanationMatch[1]);
                 explanationText = cleanText(explanationText);
             }
 
@@ -121,7 +118,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             const rows = [];
 
-            // Question
             rows.push(
                 new TableRow({
                     children: [
@@ -131,7 +127,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-            // Type
             rows.push(
                 new TableRow({
                     children: [
@@ -141,7 +136,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-            // Options
             options.forEach(opt => {
                 rows.push(
                     new TableRow({
@@ -153,7 +147,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 );
             });
 
-            // Answer
             rows.push(
                 new TableRow({
                     children: [
@@ -163,7 +156,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-            // Solution (blank)
             rows.push(
                 new TableRow({
                     children: [
@@ -173,8 +165,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-
-            // Positive Marks
             rows.push(
                 new TableRow({
                     children: [
@@ -184,7 +174,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-            // Negative Marks
             rows.push(
                 new TableRow({
                     children: [
