@@ -79,9 +79,10 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             const options = [];
 
-            const optionRegex = /\([a-d]\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct Answer|Explanation|$)/gi;
+            const optionRegex = /^\s*\([a-d]\)\s*([\s\S]*?)(?=^\s*\([a-d]\)|^\s*(Answer|Correct Answer|Explanation)|$)/gim;
 
             let match;
+
             while ((match = optionRegex.exec(block)) !== null) {
                 options.push(cleanText(match[1]));
             }
