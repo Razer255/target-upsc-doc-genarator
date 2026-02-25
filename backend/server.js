@@ -47,10 +47,10 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             // Extract Options
             const options = [];
-            const optionRegex = /\([a-d]\)\s*(.+)/gi;
+            const optionRegex = /\([a-d]\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Explanation|$)/gi;
             let match;
             while ((match = optionRegex.exec(block)) !== null) {
-                options.push(match[1].trim());
+                options.push(match[1].replace(/\s+/g, " ").trim());
             }
 
             // Extract Answer
