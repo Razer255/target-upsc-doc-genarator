@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DOC Converter</title>
+</head>
+<body>
+
+<h2>Upload Question DOC</h2>
+
+<form id="uploadForm">
+    <input type="file" name="file" accept=".docx" required />
+    <button type="submit">Convert & Download</button>
+</form>
+
+<script>
+document.getElementById("uploadForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    const response = await fetch("/upload-doc", {
+        method: "POST",
+        body: formData
+    });
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Converted_Output.docx";
+    a.click();
+});
+</script>
+
+</body>
+</html>
