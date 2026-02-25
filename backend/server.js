@@ -79,12 +79,23 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             const options = [];
 
-            const optionRegex = /^\s*\([a-d]\)\s*([\s\S]*?)(?=^\s*\([a-d]\)|^\s*(Answer|Correct Answer|Explanation)|$)/gim;
+            // Find all option markers like (a), (b), (c), (d)
+            const optionMatches = [...block.matchAll(/\([a-d]\)/gi)];
 
-            let match;
+            for (let i = 0; i < optionMatches.length; i++) {
+                const start = optionMatches[i].index;
+                const end = (i + 1 < optionMatches.length)
+                    ? optionMatches[i + 1].index
+                    : block.search(/(Answer|Correct Answer|Explanation)/i) > -1
+                        ? block.search(/(Answer|Correct Answer|Explanation)/i)
+                        : block.length;
 
-            while ((match = optionRegex.exec(block)) !== null) {
-                options.push(cleanText(match[1]));
+                const optionText = block
+                    .substring(start)
+                    .replace(/\([a-d]\)/i, "")
+                    .trim();
+
+                options.push(optionText.substring(0, end - start).trim());
             }
 
             /* --------- ANSWER EXTRACTION --------- */
