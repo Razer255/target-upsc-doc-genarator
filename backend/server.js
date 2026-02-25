@@ -21,11 +21,25 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const upload = multer({ dest: "uploads/" });
 
-// Convert letter → number
+/* ------------------------- UTILITIES ------------------------- */
+
+// Convert option letter → number
 function letterToNumber(letter) {
     const map = { a: "1", b: "2", c: "3", d: "4" };
     return map[letter?.toLowerCase()] || "";
 }
+
+// Remove emojis
+function removeEmojis(text) {
+    return text.replace(/[\p{Extended_Pictographic}]/gu, "");
+}
+
+// Clean extra spacing
+function cleanText(text) {
+    return text.replace(/\s+/g, " ").trim();
+}
+
+/* ------------------------- MAIN ROUTE ------------------------- */
 
 app.post("/upload-doc", upload.single("file"), async (req, res) => {
     try {
@@ -34,38 +48,65 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const result = await mammoth.extractRawText({ path: filePath });
         const text = result.value;
 
-        // Split by Q1. Q2. Q3.
-        const blocks = text.split(/\n?\s*Q\s*\d+[\.\)\:\-]?\s*/i).filter(b => b.trim());
+        // Robust split: handles Q1., Q1:, Q1), Q 1 etc.
+        const blocks = text
+            .split(/\n?\s*(?=Q\s*\d+)/i)
+            .filter(b => b.trim());
+
+        console.log("Detected questions:", blocks.length);
 
         const children = [];
 
         blocks.forEach(block => {
 
-            // Extract Question
-            const questionPart = block.split("(a)")[0].trim();
-            const questionText = questionPart.trim();
+            /* --------- QUESTION EXTRACTION --------- */
 
-            // Extract Options
+            const firstOptionMatch = block.match(/\([a-d]\)/i);
+
+            let questionText = "";
+
+            if (firstOptionMatch) {
+                questionText = block
+                    .substring(0, firstOptionMatch.index)
+                    .replace(/^Q\s*\d+[\.\:\-\)]?\s*/i, "");
+            } else {
+                questionText = block;
+            }
+
+            questionText = cleanText(questionText);
+
+            /* --------- OPTION EXTRACTION --------- */
+
             const options = [];
-            const optionRegex = /\([a-d]\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Explanation|$)/gi;
+
+            const optionRegex = /\([a-d]\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct Answer|Explanation|$)/gi;
+
             let match;
             while ((match = optionRegex.exec(block)) !== null) {
-                options.push(match[1].replace(/\s+/g, " ").trim());
+                options.push(cleanText(match[1]));
             }
 
-            // Extract Answer
-            const answerMatch = block.match(/Answer\s*[:\-]?\s*\(?([a-d])\)?/i);
-            const answerLetter = answerMatch ? answerMatch[1] : "";
+            /* --------- ANSWER EXTRACTION --------- */
+
+            const answerMatch = block.match(/(Correct\s*)?Answer\s*[:\-]?\s*\(?([a-d])\)?/i);
+
+            const answerLetter = answerMatch ? answerMatch[2] : "";
             const answerNumber = letterToNumber(answerLetter);
 
-            // Extract Explanation
+            /* --------- EXPLANATION EXTRACTION --------- */
+
             let explanationText = "";
-            const explanationSplit = block.split(/Explanation/i);
-            if (explanationSplit.length > 1) {
-                explanationText = explanationSplit[1].trim();
+
+            const explanationMatch = block.split(/Explanation/i);
+
+            if (explanationMatch.length > 1) {
+                explanationText = explanationMatch[1];
+                explanationText = removeEmojis(explanationText);
+                explanationText = cleanText(explanationText);
             }
 
-            // Build Table Rows
+            /* --------- BUILD TABLE --------- */
+
             const rows = [];
 
             // Question
@@ -110,7 +151,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 })
             );
 
-            // Solution (Blank)
+            // Solution (blank)
             rows.push(
                 new TableRow({
                     children: [
@@ -119,6 +160,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                     ]
                 })
             );
+
 
             // Positive Marks
             rows.push(
@@ -141,7 +183,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             );
 
             const table = new Table({
-                rows: rows,
+                rows,
                 width: {
                     size: 100,
                     type: WidthType.PERCENTAGE
@@ -151,6 +193,8 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             children.push(table);
             children.push(new Paragraph(""));
         });
+
+        /* --------- GENERATE DOC --------- */
 
         const doc = new Document({
             sections: [{ children }]
@@ -162,6 +206,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             "Content-Disposition",
             "attachment; filename=Converted_Output.docx"
         );
+
         res.setHeader(
             "Content-Type",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -175,7 +220,10 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
     }
 });
 
+/* ------------------------- SERVER ------------------------- */
+
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
     console.log("Server running on port " + PORT);
 });
