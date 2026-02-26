@@ -106,13 +106,18 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             let questionText = "";
 
             if (firstOptionMatch) {
-                questionText = block
-                    .substring(0, firstOptionMatch.index)
-                    .replace(/^Q\s*\d+[\.\:\-\)]?\s*/i, "");
+                questionText = block.substring(0, firstOptionMatch.index);
             } else {
                 questionText = block;
             }
 
+            questionText = questionText.replace(
+                /^\s*Q[\.\-\:\s]*\d+[\.\-\:\)]*\s*/im,
+                ""
+            );
+
+            // Keep year like [CSE-2010]
+            // Clean spacing but preserve line breaks
             questionText = removeEmojis(questionText);
             questionText = cleanText(questionText);
 
