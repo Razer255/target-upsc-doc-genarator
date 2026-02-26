@@ -54,7 +54,7 @@ function safeParagraphs(text) {
 
         return lines.map(line => {
 
-            const match = line.match(/^\s*(\d+)\.\s+(.*)/);
+            const match = line.match(/^\s*(\d+)[\.\s]+(.*)/);
 
             if (match) {
                 // Real numbered list
