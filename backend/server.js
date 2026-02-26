@@ -33,7 +33,6 @@ function removeEmojis(text) {
     return text.replace(/[\p{Extended_Pictographic}]/gu, "");
 }
 
-// CLEAN but PRESERVE line breaks
 function cleanText(text) {
     if (!text) return "";
     return text
@@ -43,54 +42,30 @@ function cleanText(text) {
         .trim();
 }
 
-// SAFE paragraph builder (never returns empty array)
-function safeParagraphs(text) {
+/* ---------- QUESTION PARAGRAPH BUILDER (WITH NUMBERING) ---------- */
 
-        if (!text || typeof text !== "string") {
-            return [new Paragraph("")];
+function questionParagraphs(text) {
+
+    if (!text) return [new Paragraph("")];
+
+    const lines = text.split("\n");
+
+    return lines.map(line => {
+
+        const match = line.match(/^\s*(\d+)[\.\s]+(.*)/);
+
+        if (match) {
+            return new Paragraph({
+                text: match[2],
+                numbering: {
+                    reference: "numbered-list",
+                    level: 0
+                }
+            });
         }
 
-        const lines = text.split("\n");
-
-        return lines.map(line => {
-
-            const match = line.match(/^\s*(\d+)[\.\s]+(.*)/);
-
-            if (match) {
-                // Real numbered list
-                return new Paragraph({
-                    text: match[2],
-                    numbering: {
-                        reference: "numbered-list",
-                        level: 0
-                    }
-                });
-            }
-
-            return new Paragraph({ text: line });
-        });
-    }
-
-// SPECIAL formatting for solution
-function formatSolution(text) {
-    if (!text || typeof text !== "string") {
-        return [new Paragraph("")];
-    }
-
-    text = text.replace(/\r/g, "").trim();
-
-    // Start new paragraph at each Statement X –
-    text = text.replace(/(Statement\s*\d+\s*[-–]\s*)/gi, "\n$1");
-
-    const parts = text.split("\n").filter(p => p.trim());
-
-    if (parts.length === 0) {
-        return [new Paragraph("")];
-    }
-
-    return parts.map(part =>
-        new Paragraph({ text: part.trim() })
-    );
+        return new Paragraph({ text: line });
+    });
 }
 
 /* ------------------------- MAIN ROUTE ------------------------- */
@@ -102,15 +77,16 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const result = await mammoth.extractRawText({ path: filePath });
         const text = result.value;
 
+        /* 🔥 SPLIT BASED ON YEAR TAG */
         const blocks = text
-        .split(/(?=\[[A-Z]+-\d{4}\])|(?=Q\s*\d+)/g)
-        .filter(b => b.trim());
+            .split(/(?=\[[A-Z]+-\d{4}\])/g)
+            .filter(b => b.trim());
 
         const children = [];
 
         blocks.forEach(block => {
 
-            /* --------- QUESTION --------- */
+            /* --------- QUESTION EXTRACTION --------- */
 
             const firstOptionMatch = block.match(/\([a-d]\)/i);
 
@@ -122,17 +98,16 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 questionText = block;
             }
 
+            // Remove Q1 / Q.1 etc
             questionText = questionText.replace(
                 /^\s*Q[\.\-\:\s]*\d+[\.\-\:\)]*\s*/im,
                 ""
             );
 
-            // Keep year like [CSE-2010]
-            // Clean spacing but preserve line breaks
             questionText = removeEmojis(questionText);
             questionText = cleanText(questionText);
 
-            /* --------- OPTIONS --------- */
+            /* --------- OPTION EXTRACTION --------- */
 
             const options = [];
 
@@ -140,6 +115,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 /\(([a-d])\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct\s*Answer|Explanation|$)/gi;
 
             let match;
+
             while ((match = optionRegex.exec(block)) !== null) {
                 let optionText = match[2];
                 optionText = removeEmojis(optionText);
@@ -149,7 +125,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             if (options.length > 4) options.splice(4);
 
-            /* --------- ANSWER --------- */
+            /* --------- ANSWER EXTRACTION --------- */
 
             const answerMatch = block.match(
                 /(Correct\s*)?Answer\s*[:\-]?\s*\(?([a-d])\)?/i
@@ -158,7 +134,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             const answerLetter = answerMatch ? answerMatch[2] : "";
             const answerNumber = letterToNumber(answerLetter);
 
-            /* --------- EXPLANATION --------- */
+            /* --------- EXPLANATION EXTRACTION --------- */
 
             let explanationText = "";
 
@@ -169,10 +145,10 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             if (explanationMatch) {
                 explanationText = removeEmojis(explanationMatch[1]);
-                explanationText = cleanText(explanationText);
+                explanationText = cleanText(explanationMatch[1]);
             }
 
-            /* --------- TABLE BUILD --------- */
+            /* --------- BUILD TABLE --------- */
 
             const rows = [];
 
@@ -180,7 +156,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Question")] }),
-                        new TableCell({ children: safeParagraphs(questionText) })
+                        new TableCell({ children: questionParagraphs(questionText) })
                     ]
                 })
             );
@@ -199,7 +175,9 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                     new TableRow({
                         children: [
                             new TableCell({ children: [new Paragraph("Option")] }),
-                            new TableCell({ children: safeParagraphs(opt) })
+                            new TableCell({
+                                children: [new Paragraph({ text: opt })]
+                            })
                         ]
                     })
                 );
@@ -218,7 +196,11 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Solution")] }),
-                        new TableCell({ children: formatSolution(explanationText) })
+                        new TableCell({
+                            children: explanationText
+                                .split("\n")
+                                .map(line => new Paragraph({ text: line }))
+                        })
                     ]
                 })
             );
@@ -253,24 +235,26 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             children.push(new Paragraph(""));
         });
 
+        /* ---------- DOCUMENT WITH NUMBERING CONFIG ---------- */
+
         const doc = new Document({
             numbering: {
-                    config: [
-                        {
-                            reference: "numbered-list",
-                            levels: [
-                                {
-                                    level: 0,
-                                    format: "decimal",
-                                    text: "%1.",
-                                    alignment: "left"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                sections: [{ children }]
-            });
+                config: [
+                    {
+                        reference: "numbered-list",
+                        levels: [
+                            {
+                                level: 0,
+                                format: "decimal",
+                                text: "%1.",
+                                alignment: "left"
+                            }
+                        ]
+                    }
+                ]
+            },
+            sections: [{ children }]
+        });
 
         const buffer = await Packer.toBuffer(doc);
 
