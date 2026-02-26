@@ -23,17 +23,29 @@ const upload = multer({ dest: "uploads/" });
 
 /* ------------------------- UTILITIES ------------------------- */
 
+// Convert (a)(b)(c)(d) → 1/2/3/4
 function letterToNumber(letter) {
     const map = { a: "1", b: "2", c: "3", d: "4" };
     return map[letter?.toLowerCase()] || "";
 }
 
+// Remove emojis only (do NOT remove line breaks)
 function removeEmojis(text) {
     return text.replace(/[\p{Extended_Pictographic}]/gu, "");
 }
 
+// Clean spacing but preserve line breaks
 function cleanText(text) {
-    return text.replace(/\s+/g, " ").trim();
+    return text
+        .replace(/\r/g, "")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+// Convert multiline string to real DOCX paragraphs
+function multilineParagraph(text) {
+    return text.split("\n").map(line => new Paragraph(line));
 }
 
 /* ------------------------- MAIN ROUTE ------------------------- */
@@ -48,8 +60,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const blocks = text
             .split(/\n?\s*(?=Q\s*\d+)/i)
             .filter(b => b.trim());
-
-        console.log("Detected questions:", blocks.length);
 
         const children = [];
 
@@ -69,29 +79,24 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 questionText = block;
             }
 
+            questionText = removeEmojis(questionText);
             questionText = cleanText(questionText);
 
-            /* --------- OPTION EXTRACTION (FIXED) --------- */
+            /* --------- OPTION EXTRACTION --------- */
 
             const options = [];
 
             const optionRegex = /\(([a-d])\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct\s*Answer|Explanation|$)/gi;
 
             let match;
-
             while ((match = optionRegex.exec(block)) !== null) {
                 let optionText = match[2];
-
                 optionText = removeEmojis(optionText);
                 optionText = cleanText(optionText);
-
                 options.push(optionText);
             }
 
-            // Strict 4 options safeguard
-            if (options.length > 4) {
-                options.splice(4);
-            }
+            if (options.length > 4) options.splice(4);
 
             /* --------- ANSWER EXTRACTION --------- */
 
@@ -122,7 +127,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Question")] }),
-                        new TableCell({ children: [new Paragraph(questionText)] })
+                        new TableCell({ children: multilineParagraph(questionText) })
                     ]
                 })
             );
@@ -141,7 +146,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                     new TableRow({
                         children: [
                             new TableCell({ children: [new Paragraph("Option")] }),
-                            new TableCell({ children: [new Paragraph(opt)] })
+                            new TableCell({ children: multilineParagraph(opt) })
                         ]
                     })
                 );
@@ -160,7 +165,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Solution")] }),
-                        new TableCell({ children: [new Paragraph(explanationText)] })
+                        new TableCell({ children: multilineParagraph(explanationText) })
                     ]
                 })
             );
@@ -194,8 +199,6 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             children.push(table);
             children.push(new Paragraph(""));
         });
-
-        /* --------- GENERATE DOC --------- */
 
         const doc = new Document({
             sections: [{ children }]
