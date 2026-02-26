@@ -92,7 +92,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         const text = result.value;
 
         const blocks = text
-        .split(/\n(?=\[.*?\]\s*\n?Q\s*\d+)/i)
+        .split(/\n(?=(\[[^\]]+\]\s*\n)?\s*Q\s*\d+)/i)
         .filter(b => b.trim());
 
         const children = [];
