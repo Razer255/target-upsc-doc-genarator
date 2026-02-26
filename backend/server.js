@@ -45,20 +45,31 @@ function cleanText(text) {
 
 // SAFE paragraph builder (never returns empty array)
 function safeParagraphs(text) {
-    if (!text || typeof text !== "string") {
-        return [new Paragraph("")];
+
+        if (!text || typeof text !== "string") {
+            return [new Paragraph("")];
+        }
+
+        const lines = text.split("\n");
+
+        return lines.map(line => {
+
+            const match = line.match(/^\s*(\d+)\.\s+(.*)/);
+
+            if (match) {
+                // Real numbered list
+                return new Paragraph({
+                    text: match[2],
+                    numbering: {
+                        reference: "numbered-list",
+                        level: 0
+                    }
+                });
+            }
+
+            return new Paragraph({ text: line });
+        });
     }
-
-    const lines = text.split("\n");
-
-    if (lines.length === 0) {
-        return [new Paragraph("")];
-    }
-
-    return lines.map(line =>
-        new Paragraph({ text: line })
-    );
-}
 
 // SPECIAL formatting for solution
 function formatSolution(text) {
@@ -243,8 +254,23 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
         });
 
         const doc = new Document({
-            sections: [{ children }]
-        });
+            numbering: {
+                    config: [
+                        {
+                            reference: "numbered-list",
+                            levels: [
+                                {
+                                    level: 0,
+                                    format: "decimal",
+                                    text: "%1.",
+                                    alignment: "left"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                sections: [{ children }]
+            });
 
         const buffer = await Packer.toBuffer(doc);
 
