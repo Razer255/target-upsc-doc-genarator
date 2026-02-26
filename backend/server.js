@@ -44,8 +44,13 @@ function cleanText(text) {
 }
 
 // Convert multiline string to real DOCX paragraphs
-function multilineParagraph(text) {
-    return text.split("\n").map(line => new Paragraph(line));
+function formatSolutionParagraphs(text) {
+    text = text.replace(/\r/g, "").trim();
+    text = text.replace(/(Statement\s*\d+\s*[-–]\s*)/gi, "\n$1");
+
+    const parts = text.split("\n").filter(p => p.trim());
+
+    return parts.map(part => new Paragraph(part.trim()));
 }
 
 /* ------------------------- MAIN ROUTE ------------------------- */
@@ -165,7 +170,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Solution")] }),
-                        new TableCell({ children: multilineParagraph(explanationText) })
+                        new TableCell({ children: formatSolutionParagraphs(explanationText) })
                     ]
                 })
             );
