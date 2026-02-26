@@ -23,19 +23,19 @@ const upload = multer({ dest: "uploads/" });
 
 /* ------------------------- UTILITIES ------------------------- */
 
-// Convert (a)(b)(c)(d) → 1/2/3/4
 function letterToNumber(letter) {
     const map = { a: "1", b: "2", c: "3", d: "4" };
     return map[letter?.toLowerCase()] || "";
 }
 
-// Remove emojis only (do NOT remove line breaks)
 function removeEmojis(text) {
+    if (!text) return "";
     return text.replace(/[\p{Extended_Pictographic}]/gu, "");
 }
 
-// Clean spacing but preserve line breaks
+// CLEAN but PRESERVE line breaks
 function cleanText(text) {
+    if (!text) return "";
     return text
         .replace(/\r/g, "")
         .replace(/[ \t]+/g, " ")
@@ -43,14 +43,43 @@ function cleanText(text) {
         .trim();
 }
 
-// Convert multiline string to real DOCX paragraphs
-function formatSolutionParagraphs(text) {
+// SAFE paragraph builder (never returns empty array)
+function safeParagraphs(text) {
+    if (!text || typeof text !== "string") {
+        return [new Paragraph("")];
+    }
+
+    const lines = text.split("\n");
+
+    if (lines.length === 0) {
+        return [new Paragraph("")];
+    }
+
+    return lines.map(line =>
+        new Paragraph({ text: line })
+    );
+}
+
+// SPECIAL formatting for solution
+function formatSolution(text) {
+    if (!text || typeof text !== "string") {
+        return [new Paragraph("")];
+    }
+
     text = text.replace(/\r/g, "").trim();
+
+    // Start new paragraph at each Statement X –
     text = text.replace(/(Statement\s*\d+\s*[-–]\s*)/gi, "\n$1");
 
     const parts = text.split("\n").filter(p => p.trim());
 
-    return parts.map(part => new Paragraph(part.trim()));
+    if (parts.length === 0) {
+        return [new Paragraph("")];
+    }
+
+    return parts.map(part =>
+        new Paragraph({ text: part.trim() })
+    );
 }
 
 /* ------------------------- MAIN ROUTE ------------------------- */
@@ -70,7 +99,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
         blocks.forEach(block => {
 
-            /* --------- QUESTION EXTRACTION --------- */
+            /* --------- QUESTION --------- */
 
             const firstOptionMatch = block.match(/\([a-d]\)/i);
 
@@ -87,11 +116,12 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             questionText = removeEmojis(questionText);
             questionText = cleanText(questionText);
 
-            /* --------- OPTION EXTRACTION --------- */
+            /* --------- OPTIONS --------- */
 
             const options = [];
 
-            const optionRegex = /\(([a-d])\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct\s*Answer|Explanation|$)/gi;
+            const optionRegex =
+                /\(([a-d])\)\s*([\s\S]*?)(?=\([a-d]\)|Answer|Correct\s*Answer|Explanation|$)/gi;
 
             let match;
             while ((match = optionRegex.exec(block)) !== null) {
@@ -103,7 +133,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
 
             if (options.length > 4) options.splice(4);
 
-            /* --------- ANSWER EXTRACTION --------- */
+            /* --------- ANSWER --------- */
 
             const answerMatch = block.match(
                 /(Correct\s*)?Answer\s*[:\-]?\s*\(?([a-d])\)?/i
@@ -112,11 +142,13 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
             const answerLetter = answerMatch ? answerMatch[2] : "";
             const answerNumber = letterToNumber(answerLetter);
 
-            /* --------- EXPLANATION EXTRACTION --------- */
+            /* --------- EXPLANATION --------- */
 
             let explanationText = "";
 
-            const explanationRegex = /Explanation\s*[:\-]?\s*([\s\S]*)/i;
+            const explanationRegex =
+                /Explanation\s*[:\-]?\s*([\s\S]*)/i;
+
             const explanationMatch = block.match(explanationRegex);
 
             if (explanationMatch) {
@@ -124,7 +156,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 explanationText = cleanText(explanationText);
             }
 
-            /* --------- BUILD TABLE --------- */
+            /* --------- TABLE BUILD --------- */
 
             const rows = [];
 
@@ -132,7 +164,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Question")] }),
-                        new TableCell({ children: multilineParagraph(questionText) })
+                        new TableCell({ children: safeParagraphs(questionText) })
                     ]
                 })
             );
@@ -151,7 +183,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                     new TableRow({
                         children: [
                             new TableCell({ children: [new Paragraph("Option")] }),
-                            new TableCell({ children: multilineParagraph(opt) })
+                            new TableCell({ children: safeParagraphs(opt) })
                         ]
                     })
                 );
@@ -170,7 +202,7 @@ app.post("/upload-doc", upload.single("file"), async (req, res) => {
                 new TableRow({
                     children: [
                         new TableCell({ children: [new Paragraph("Solution")] }),
-                        new TableCell({ children: formatSolutionParagraphs(explanationText) })
+                        new TableCell({ children: formatSolution(explanationText) })
                     ]
                 })
             );
